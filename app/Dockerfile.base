@@ -1,0 +1,72 @@
+# Pre-baked base for the supertonic-tts service image.
+#
+# This exists only because of one constraint: a locked-down build runner may
+# reach your container registry and an internal PyPI proxy and nothing else.
+# Such proxies typically mirror pypi and npm but not apt, so an `apt-get
+# install` in the service Dockerfile cannot work there — it fails with a dead
+# https method rather than a clean "cannot resolve host", which makes it look
+# like a broken image instead of a missing mirror.
+#
+# The fix is to pre-bake the system layer: this file is the apt block from
+# ../Dockerfile, run once on a host with egress and pushed to your registry.
+# The service image then runs against it with
+# `--build-arg CUDA_BASE=<registry>/supertonic-tts:base` and installs nothing.
+#
+# Build and push with ./scripts/build-base-image.sh, from a machine that can
+# reach Docker Hub, the NVIDIA apt repo and your registry. It must be an
+# x86_64 machine: the CUDA base and the TensorRT debs are amd64-only, and
+# building this under qemu emulation is both very slow and prone to faulting
+# inside apt.
+#
+# Rebuild only when TRT_VERSION or the system package list changes. The
+# service image rebuilds on every commit and does not touch this.
+
+ARG CUDA_BASE=nvidia/cuda:12.9.0-cudnn-runtime-ubuntu22.04
+FROM ${CUDA_BASE}
+
+ARG DEBIAN_FRONTEND=noninteractive
+
+# Keep in sync with ../Dockerfile's default and $TRT_VERSION in your CI
+# pipeline definition. The service image re-asserts the resulting
+# libnvinfer.so.10.* version at build time, so a mismatch here fails there
+# rather than shipping a container that cannot run supertonic-3's
+# dynamic-shape graphs.
+ARG TRT_VERSION=10.13.0.35-1+cuda12.9
+
+# The libnvinfer* packages come from NVIDIA's apt repo over https, and on a
+# network that terminates TLS (a corporate inspecting proxy — check with
+# `openssl s_client -connect developer.download.nvidia.com:443`) the
+# container does not trust the interceptor's root, so apt fails with
+# "server certificate verification failed" or curl with
+# "unable to get local issuer certificate". The host works because its root
+# is in the system keychain; the container has no such thing.
+#
+# scripts/build-base-image.sh writes that root to extra-ca.crt in the build context,
+# or an empty file when there is nothing to inject, so this COPY always has
+# something to find. An empty file makes update-ca-certificates a no-op.
+COPY extra-ca.crt /usr/local/share/ca-certificates/extra-ca.crt
+RUN if [ -s /usr/local/share/ca-certificates/extra-ca.crt ]; then \
+        apt-get update && apt-get install -y --no-install-recommends ca-certificates \
+        && update-ca-certificates \
+        && echo "installed extra CA:" \
+        && openssl x509 -in /usr/local/share/ca-certificates/extra-ca.crt -noout -subject; \
+    else \
+        rm -f /usr/local/share/ca-certificates/extra-ca.crt; \
+    fi
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        ca-certificates curl libsndfile1 tini \
+        python3 python3-venv \
+        libnvinfer10=${TRT_VERSION} \
+        libnvinfer-plugin10=${TRT_VERSION} \
+        libnvonnxparsers10=${TRT_VERSION} \
+    && ln -sf /usr/bin/python3 /usr/local/bin/python3 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Fail here, on the machine that can actually be debugged, rather than three
+# layers into a CI build that cannot install anything to investigate with.
+RUN python3 -c "import sys; assert sys.version_info[:2] == (3, 10), sys.version" \
+ && python3 -m venv /tmp/probe && /tmp/probe/bin/python -c "import ensurepip" \
+ && rm -rf /tmp/probe \
+ && ls /usr/lib/x86_64-linux-gnu/libnvinfer.so.10.* \
+ && test -x /usr/bin/tini && test -x /usr/bin/curl

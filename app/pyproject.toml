@@ -1,0 +1,85 @@
+[project]
+name = "supertonic-streaming-service"
+version = "0.1.0"
+description = "Supertonic streaming TTS HTTP server (TensorRT FP16)"
+readme = "../README.md"
+requires-python = ">=3.10,<3.12"
+
+# Pinned for reproducibility. Bumping ORT means rebuilding the TRT
+# engine cache, so don't bump it casually. Bumps must go through
+# `uv lock` so uv.lock stays in sync.
+dependencies = [
+    "supertonic==1.3.1",
+    # GPU + TensorRT EP. supertonic itself declares `onnxruntime` (CPU)
+    # as a dep, which conflicts: both `onnxruntime` and `onnxruntime-gpu`
+    # install to the same Python package directory and clobber each
+    # other. We strip `onnxruntime` out of supertonic's resolved deps via
+    # the dependency-metadata override below and install only -gpu —
+    # the GPU wheel exposes the same `onnxruntime` Python module so
+    # `import onnxruntime` from supertonic still resolves.
+    "onnxruntime-gpu==1.23.0",
+    # `onnx` is needed for one-time shape inference on supertonic's ONNX
+    # files (see streaming_synth._ensure_shape_inferred). Without it
+    # ORT's TensorRT EP fails to build subgraphs ("input ... has no
+    # shape specified") and the session refuses to initialise.
+    "onnx>=1.16,<2",
+    "numpy>=1.26,<3",
+    "soundfile>=0.12.1",
+    "fastapi>=0.110,<1",
+    "uvicorn[standard]>=0.27,<1",
+    "pydantic>=2.5,<3",
+    "huggingface-hub>=0.24,<1",
+    # Multilingual number-to-words expansion ("200" → "two hundred" /
+    # "deux cents" / ...). Used by text_preprocess.py before chunking;
+    # without it supertonic reads digits one-by-one which is wrong for
+    # almost every language.
+    "num2words>=0.5,<1",
+    "lingua-language-detector>=2.0,<3",
+]
+
+# Everything below `dependencies` is excluded from the image. The Dockerfile
+# installs with `--no-dev`, so nothing here reaches production — these groups
+# exist so `tests/` and `benchmarks/` are installable from this file alone and
+# there is no second requirements list to keep in sync.
+[dependency-groups]
+# pytest suite under app/tests/. Needs no GPU and no model weights:
+# `supertonic` and `onnxruntime` are stubbed out by the tests themselves, and
+# fastapi / numpy / soundfile come in as prod dependencies above.
+#
+# httpx is not just TestClient's transport — test_legacy_api_compat uses it
+# directly to stream from a real uvicorn subprocess, which is the only way to
+# prove the PCM response stays chunked (httpx's ASGI transport drains the
+# body, so an in-process client cannot tell streaming from buffering).
+dev = [
+    "pytest>=8,<9",
+    "httpx>=0.27,<1",
+]
+# Load-generation and plotting scripts under app/benchmarks/. Deliberately
+# separate from `dev`: matplotlib is a heavy dependency that the unit tests
+# never import, and CI only ever needs `dev`.
+bench = [
+    "aiohttp>=3.9,<4",
+    "matplotlib>=3.8,<4",
+]
+
+[tool.uv]
+# Nothing in this project is importable as an installed distribution — the
+# service runs as `python src/server.py` with src/ on sys.path, so there is
+# no wheel to build and uv must not try.
+package = false
+
+# `uv sync` with no --group flags installs dev by default. The Dockerfile
+# passes --no-dev so the image never sees it.
+default-groups = ["dev"]
+
+# Override supertonic's declared deps so uv does NOT install the CPU
+# `onnxruntime` package alongside `onnxruntime-gpu`. Keeping in sync with
+# what `uv pip show supertonic` lists, minus onnxruntime.
+[[tool.uv.dependency-metadata]]
+name = "supertonic"
+version = "1.3.1"
+requires-dist = [
+    "huggingface-hub",
+    "numpy",
+    "soundfile",
+]

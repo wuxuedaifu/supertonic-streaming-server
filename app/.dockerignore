@@ -1,0 +1,23 @@
+__pycache__
+*.pyc
+*.pyo
+.pytest_cache
+*.log
+
+# uv: pyproject.toml and uv.lock are the build's only dependency inputs and
+# must stay. A local .venv must not — it is macOS/arm64 here and the image
+# builds its own at /opt/supertonic/.venv.
+.venv/
+
+# Not part of the service image. The Dockerfile only COPYs src/ and
+# entrypoint.sh, so these are already excluded from the result; keeping them
+# out of the context too means editing a test or a benchmark does not
+# invalidate the build cache.
+tests/
+benchmarks/
+archive/
+
+# Benchmark output, in case anyone points SUPERTONIC_RESULTS_DIR in here.
+trt_cache/
+results*/
+benchmark_test/

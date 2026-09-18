@@ -1,0 +1,88 @@
+assets/
+
+*.onnx
+onnx
+
+# Output files
+results
+results_v3_sdk/
+
+# Python
+__pycache__
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Virtual environments
+.venv
+venv/
+ENV/
+env/
+.dotnet/
+.m2/
+.uv-cache/
+.clang-module-cache/
+.swift-home/
+
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+package-lock.json
+
+# Swift
+.build/
+.swiftpm/
+*.xcodeproj
+*.xcworkspace
+xcuserdata/
+DerivedData/
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# TensorRT engine cache — GPU-architecture-specific compiled artefacts,
+# auto-rebuilt on first run. Never check these in.
+trt_cache/
+*.engine
+*.profile
+*.timing
+
+# Server / test run logs
+server*.log
+test_tts_run.log
+
+# Local synthesis output from curl/test runs
+out.pcm
+out.wav
+out.flac
+out.opus
+
+# Written by build-base-image.sh from the host trust store; network-specific.
+app/extra-ca.crt
+
+
+docs/
+deploy/
